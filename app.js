@@ -115,6 +115,11 @@ async function initializeGPU() {
 async function gpuFilter(input, width, height, algorithm, radius) {
   if (!device || !pipeline) await initializeGPU();
   const byteLength = input.byteLength;
+  const maxStorageSize = device.limits.maxStorageBufferBindingSize;
+  if (byteLength > maxStorageSize) {
+    throw new Error(`Изображение слишком большое для этого GPU: требуется ${(byteLength / 1048576).toFixed(1)} MiB, лимит storage buffer — ${(maxStorageSize / 1048576).toFixed(1)} MiB.`);
+  }
+  const start = performance.now();
   const inputBuffer = device.createBuffer({ size: byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const outputBuffer = device.createBuffer({ size: byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const readBuffer = device.createBuffer({ size: byteLength, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
@@ -139,7 +144,6 @@ async function gpuFilter(input, width, height, algorithm, radius) {
     pass.end();
     encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, byteLength);
 
-    const start = performance.now();
     device.queue.submit([encoder.finish()]);
     await readBuffer.mapAsync(GPUMapMode.READ);
     const elapsed = performance.now() - start;
