@@ -3,6 +3,10 @@ const sourceCanvas = $("#source");
 const outputCanvas = $("#output");
 const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
 const outputCtx = outputCanvas.getContext("2d");
+const differenceCanvas = $("#difference");
+const differenceCtx = differenceCanvas.getContext("2d");
+const chartCanvas = $("#benchmarkChart");
+const chartCtx = chartCanvas.getContext("2d");
 const statusEl = $("#status");
 
 let device = null;
@@ -10,6 +14,8 @@ let pipeline = null;
 let sourcePixels = null;
 let sourceWidth = 512;
 let sourceHeight = 512;
+let lastCpuResult = null;
+let lastGpuResult = null;
 
 function setStatus(message, error = false) {
   statusEl.textContent = message;
@@ -32,6 +38,11 @@ function makeTestImage(width, height) {
 }
 
 function setSource(imageData) {
+  lastCpuResult = null;
+  lastGpuResult = null;
+  differenceCanvas.width = imageData.width;
+  differenceCanvas.height = imageData.height;
+  differenceCtx.clearRect(0, 0, differenceCanvas.width, differenceCanvas.height);
   sourceWidth = imageData.width;
   sourceHeight = imageData.height;
   sourceCanvas.width = sourceWidth;
@@ -192,6 +203,76 @@ function resizePixels(input, fromWidth, fromHeight, size) {
   return floats;
 }
 
+function renderDifference(cpu, gpu, width, height) {
+  if (!cpu || !gpu || cpu.length !== gpu.length) return;
+  const data = new Uint8ClampedArray(cpu.length);
+  let maxDifference = 0;
+  let totalDifference = 0;
+  const pixelCount = cpu.length / 4;
+  for (let i = 0; i < cpu.length; i += 4) {
+    const difference = Math.max(Math.abs(cpu[i] - gpu[i]), Math.abs(cpu[i + 1] - gpu[i + 1]), Math.abs(cpu[i + 2] - gpu[i + 2]));
+    maxDifference = Math.max(maxDifference, difference);
+    totalDifference += difference;
+    data[i] = Math.min(255, difference * 8);
+    data[i + 1] = Math.min(255, difference * 2);
+    data[i + 2] = 0;
+    data[i + 3] = 255;
+  }
+  differenceCanvas.width = width;
+  differenceCanvas.height = height;
+  differenceCtx.putImageData(new ImageData(data, width, height), 0, 0);
+  $("#differenceInfo").textContent = `Максимальная разница каналов: ${maxDifference.toFixed(3)}; средняя разница на пиксель: ${(totalDifference / pixelCount).toFixed(4)}. Цвет усилен ×8 для наглядности.`;
+}
+
+function updateDifferenceIfReady(width = sourceWidth, height = sourceHeight) {
+  if (lastCpuResult && lastGpuResult && lastCpuResult.length === lastGpuResult.length) {
+    renderDifference(lastCpuResult, lastGpuResult, width, height);
+  }
+}
+
+function drawBenchmarkChart(rows) {
+  const canvas = chartCanvas;
+  const ctx = chartCtx;
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#0b1423";
+  ctx.fillRect(0, 0, width, height);
+  const pad = { left: 62, right: 24, top: 24, bottom: 48 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+  const maxValue = Math.max(1, ...rows.flatMap(row => [row.cpu, row.gpu])) * 1.15;
+  ctx.font = "13px system-ui";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let tick = 0; tick <= 4; tick++) {
+    const value = maxValue * tick / 4;
+    const y = pad.top + plotHeight - plotHeight * tick / 4;
+    ctx.strokeStyle = "#293b59";
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+    ctx.fillStyle = "#aebfda";
+    ctx.fillText(value.toFixed(1), pad.left - 9, y);
+  }
+  const groupWidth = plotWidth / rows.length;
+  const barWidth = Math.min(54, groupWidth * 0.28);
+  rows.forEach((row, index) => {
+    const center = pad.left + groupWidth * (index + 0.5);
+    const cpuHeight = row.cpu / maxValue * plotHeight;
+    const gpuHeight = row.gpu / maxValue * plotHeight;
+    ctx.fillStyle = "#8bb4ff";
+    ctx.fillRect(center - barWidth - 3, pad.top + plotHeight - cpuHeight, barWidth, cpuHeight);
+    ctx.fillStyle = "#9fe3c1";
+    ctx.fillRect(center + 3, pad.top + plotHeight - gpuHeight, barWidth, gpuHeight);
+    ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = "#dce7f8";
+    ctx.fillText(`${row.size}²`, center, height - pad.bottom + 10);
+  });
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "#8bb4ff"; ctx.fillRect(pad.left, 5, 12, 12);
+  ctx.fillStyle = "#dce7f8"; ctx.fillText("CPU", pad.left + 18, 4);
+  ctx.fillStyle = "#9fe3c1"; ctx.fillRect(pad.left + 72, 5, 12, 12);
+  ctx.fillStyle = "#dce7f8"; ctx.fillText("GPU end-to-end", pad.left + 90, 4);
+}
+
 function renderResult(pixels, width, height) {
   outputCanvas.width = width; outputCanvas.height = height;
   outputCtx.putImageData(pixelsToImageData(pixels, width, height), 0, 0);
@@ -204,10 +285,14 @@ async function runSingle(mode) {
   const start = performance.now();
   if (mode === "cpu") {
     const result = cpuFilter(input, sourceWidth, sourceHeight, algorithm, radius);
+    lastCpuResult = result;
+    updateDifferenceIfReady();
     renderResult(result, sourceWidth, sourceHeight);
     setStatus(`CPU: ${(performance.now() - start).toFixed(2)} мс`);
   } else {
     const { result, elapsed } = await gpuFilter(input, sourceWidth, sourceHeight, algorithm, radius);
+    lastGpuResult = result;
+    updateDifferenceIfReady();
     renderResult(result, sourceWidth, sourceHeight);
     setStatus(`GPU end-to-end: ${elapsed.toFixed(2)} мс (включая ожидание и readback)`);
   }
@@ -246,6 +331,11 @@ async function runBenchmark() {
       const label = ratio > 1.05 ? `GPU быстрее в ${ratio.toFixed(2)}×` : ratio < 0.95 ? `CPU быстрее в ${(1 / ratio).toFixed(2)}×` : "примерно одинаково";
       return `<tr><td>${row.size} × ${row.size}</td><td>${row.cpu.toFixed(2)}</td><td>${row.gpu.toFixed(2)}</td><td>${label}</td></tr>`;
     }).join("")}</tbody></table>`;
+    drawBenchmarkChart(rows);
+    lastCpuResult = cpuFilter(sourcePixels, sourceWidth, sourceHeight, algorithm, radius);
+    const currentGpu = await gpuFilter(sourcePixels, sourceWidth, sourceHeight, algorithm, radius);
+    lastGpuResult = currentGpu.result;
+    updateDifferenceIfReady();
     const worst = rows.reduce((a, b) => b.accuracy.max > a.accuracy.max ? b : a);
     $("#accuracy").textContent = `Проверка корректности (CPU vs GPU, размер ${worst.size}²): максимальная разница ${worst.accuracy.max.toFixed(3)}, средняя абсолютная разница ${worst.accuracy.mean.toFixed(4)} уровня яркости. Небольшие расхождения возможны из-за порядка операций с плавающей точкой.`;
     renderResult(cpuFilter(sourcePixels, sourceWidth, sourceHeight, algorithm, radius), sourceWidth, sourceHeight);
@@ -287,6 +377,46 @@ $("#file").addEventListener("change", async (event) => {
 $("#cpu").addEventListener("click", () => runSingle("cpu").catch(error => setStatus(error.message, true)));
 $("#gpu").addEventListener("click", () => runSingle("gpu").catch(error => setStatus(error.message, true)));
 $("#benchmark").addEventListener("click", runBenchmark);
+
+function resetDemo() {
+  $("#algorithm").value = "blur";
+  $("#radius").value = "2";
+  $("#radiusValue").textContent = "2";
+  $("#repeats").value = "5";
+  $("#size").value = "512";
+  $("#file").value = "";
+  setSource(makeTestImage(512, 512));
+  outputCanvas.width = 512; outputCanvas.height = 512;
+  outputCtx.clearRect(0, 0, 512, 512);
+  chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+  $("#results").innerHTML = '<p class="muted">Нажмите «Сравнить CPU и GPU», чтобы выполнить измерения.</p>';
+  $("#accuracy").textContent = "";
+  $("#differenceInfo").textContent = "Сначала запустите CPU и GPU или полный benchmark.";
+  setStatus("Настройки сброшены. Загружено тестовое изображение 512 × 512.");
+}
+
+async function runDemo() {
+  const demoButton = $("#demo");
+  demoButton.disabled = true;
+  try {
+    setStatus("Демонстрация 1/3: выполняется CPU…");
+    await runSingle("cpu");
+    setStatus("Демонстрация 2/3: выполняется GPU…");
+    await runSingle("gpu");
+    setStatus("Демонстрация 3/3: запускается benchmark…");
+    await runBenchmark();
+    setStatus("Демонстрация завершена: результаты, график и разница CPU/GPU готовы.");
+  } catch (error) {
+    setStatus("Ошибка демонстрации: " + error.message, true);
+  } finally {
+    demoButton.disabled = false;
+  }
+}
+
+$("#reset").addEventListener("click", resetDemo);
+$("#demo").addEventListener("click", runDemo);
+$("#algorithm").addEventListener("change", () => { lastCpuResult = null; lastGpuResult = null; differenceCtx.clearRect(0, 0, differenceCanvas.width, differenceCanvas.height); });
 setSource(makeTestImage(512, 512));
+$("#differenceInfo").textContent = "Сначала запустите CPU и GPU или полный benchmark.";
 initializeGPU().then(() => setStatus("WebGPU готов. Выберите алгоритм и запустите обработку."))
   .catch(error => setStatus(error.message, true));
