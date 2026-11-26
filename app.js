@@ -95,11 +95,15 @@ async function initializeGPU() {
   if (!navigator.gpu) throw new Error("WebGPU не обнаружен. Нужен совместимый браузер и безопасный контекст (localhost/HTTPS).");
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error("Браузер не смог получить GPU-адаптер.");
-  device = await adapter.requestDevice();
-  device.lost.then((info) => {
-    device = null;
-    pipeline = null;
-    setStatus("GPU-устройство потеряно: " + (info.message || info.reason), true);
+  const newDevice = await adapter.requestDevice();
+  device = newDevice;
+  newDevice.lost.then((info) => {
+    // Не сбрасываем более новое устройство, если старое потерялось позднее.
+    if (device === newDevice) {
+      device = null;
+      pipeline = null;
+      setStatus("GPU-устройство потеряно: " + (info.message || info.reason), true);
+    }
   });
 
   const response = await fetch("./shaders/image.wgsl");
@@ -146,9 +150,9 @@ async function gpuFilter(input, width, height, algorithm, radius) {
 
     device.queue.submit([encoder.finish()]);
     await readBuffer.mapAsync(GPUMapMode.READ);
-    const elapsed = performance.now() - start;
     const result = new Float32Array(readBuffer.getMappedRange().slice(0));
     readBuffer.unmap();
+    const elapsed = performance.now() - start;
     return { result, elapsed };
   } finally {
     inputBuffer.destroy();
