@@ -3,55 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WebGPU — вычисления на GPU</title>
+  <meta name="theme-color" content="#101827">
+  <title>WebGPU Lab — обработка изображений</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0b1020; color: #edf2ff; }
-    body { max-width: 1000px; margin: 32px auto; padding: 0 18px; }
-    header, .panel { background: #151d33; border: 1px solid #2a385d; border-radius: 16px; padding: 20px; margin-bottom: 16px; }
-    h1 { margin: 0 0 8px; font-size: clamp(25px, 4vw, 38px); }
-    p { color: #b9c5df; line-height: 1.55; }
-    .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    button, select { background: #6c8cff; color: #081126; border: 0; border-radius: 9px; padding: 11px 16px; font-weight: 700; cursor: pointer; }
-    select { background: #253454; color: #fff; }
-    canvas { width: 100%; height: 300px; background: #080d19; border-radius: 12px; display: block; }
-    #status { font-weight: 650; color: #9fe3c1; }
-    code { color: #b6c9ff; }
-    .small { font-size: 13px; color: #93a4c7; }
+    :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#0b1220;color:#e8eefc}
+    *{box-sizing:border-box}body{max-width:1180px;margin:0 auto;padding:28px 18px 60px}
+    header,.panel{background:#131e31;border:1px solid #293b59;border-radius:16px;padding:20px;margin-bottom:16px}
+    h1{font-size:clamp(26px,4vw,40px);margin:0 0 8px}h2{font-size:20px;margin:0 0 14px}
+    p{color:#b7c6df;line-height:1.55}.muted,.hint{font-size:13px;color:#91a5c6}
+    .controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+    label{display:grid;gap:6px;font-size:13px;color:#c8d5eb}
+    button,select,input[type=file]{font:inherit;border-radius:9px;padding:10px 12px;border:1px solid #3a5278;background:#1c2b45;color:#eef4ff}
+    button{background:#8bb4ff;color:#08172d;border:0;font-weight:750;cursor:pointer}
+    button.secondary{background:#2a3c5d;color:#edf4ff}button:disabled{opacity:.5;cursor:wait}
+    input[type=range]{accent-color:#8bb4ff}
+    .canvases{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .chart-wrap{width:100%;overflow:hidden}.chart-wrap canvas{height:260px}
+    canvas{display:block;width:100%;height:auto;background:#080e19;border:1px solid #2a3a55;border-radius:10px;image-rendering:auto}
+    .canvas-title{font-size:13px;color:#aebfda;margin:0 0 8px}
+    #status{padding:10px 12px;background:#0e192a;border-radius:9px;color:#9fe3c1;margin:14px 0 0}
+    #status.error{color:#ffb3a9}#results{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #293b59;white-space:nowrap}
+    th{color:#aebfda;font-weight:650}.good{color:#9fe3c1}.warn{color:#ffd18b}
+    .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    code{color:#b8d0ff;background:#0c1728;padding:2px 5px;border-radius:4px}
+    @media(max-width:980px){.canvases{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:720px){.canvases,.grid2{grid-template-columns:1fr}body{padding:16px 12px 40px}}
   </style>
 </head>
 <body>
-  <header>
-    <h1>WebGPU: вычисления на GPU</h1>
-    <p>Демо запускает compute shader: GPU параллельно вычисляет значения синусоидальной функции, затем результат считывается и отображается на Canvas.</p>
-    <div class="controls">
-      <label>Количество точек:
-        <select id="count">
-          <option value="1024">1 024</option>
-          <option value="16384">16 384</option>
-          <option value="65536" selected>65 536</option>
-          <option value="262144">262 144</option>
-        </select>
-      </label>
-      <button id="run">Выполнить вычисление</button>
-    </div>
-    <p id="status">Проверка поддержки WebGPU…</p>
-  </header>
-  <section class="panel">
-    <h2>Результат вычислений</h2>
-    <canvas id="plot" width="960" height="300"></canvas>
-    <p class="small" id="stats">После запуска здесь появится время выполнения и число вычисленных элементов.</p>
-  </section>
-  <section class="panel">
-    <h2>Что происходит внутри?</h2>
-    <ol>
-      <li>JavaScript запрашивает GPU-адаптер и устройство.</li>
-      <li>Создаётся буфер для результата.</li>
-      <li>WGSL compute shader получает уникальный индекс каждого элемента.</li>
-      <li>GPU вычисляет <code>sin(x) × cos(3x)</code> для каждого элемента параллельно.</li>
-      <li>Результат копируется обратно в память CPU и рисуется на Canvas.</li>
-    </ol>
-    <p class="small">Это учебный пример. В реальных приложениях частое чтение данных обратно на CPU может снизить производительность.</p>
-  </section>
-  <script type="module" src="./app.js"></script>
+<header>
+  <h1>WebGPU Lab: обработка изображений</h1>
+  <p>Сравните CPU (JavaScript) и GPU (WebGPU) на одинаковых алгоритмах: размытие Box Blur и выделение границ Sobel. Измерения выполняются в вашем браузере — результаты зависят от устройства и драйверов.</p>
+  <div class="controls">
+    <label>Изображение<input id="file" type="file" accept="image/*"></label>
+    <label>Тестовый размер<select id="size"><option value="256">256 × 256</option><option value="512" selected>512 × 512</option><option value="1024">1024 × 1024</option></select></label>
+    <label>Алгоритм<select id="algorithm"><option value="blur">Box Blur</option><option value="sobel">Sobel — границы</option></select></label>
+    <label>Радиус размытия <span id="radiusValue">2</span><input id="radius" type="range" min="1" max="5" value="2"></label>
+    <label>Повторы<select id="repeats"><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select></label>
+  </div>
+  <div class="controls" style="margin-top:14px">
+    <button id="cpu">Обработать на CPU</button>
+    <button id="gpu">Обработать на GPU</button>
+    <button id="benchmark" class="secondary">Сравнить CPU и GPU</button>
+    <button id="demo" class="secondary">Режим демонстрации</button>
+    <button id="reset" class="secondary">Сбросить</button>
+  </div>
+  <p id="status" role="status">Подготовка WebGPU…</p>
+  <p class="hint">Можно загрузить своё изображение или использовать встроенную тестовую картинку. Для WebGPU откройте сайт через localhost или HTTPS.</p>
+</header>
+
+<section class="panel">
+  <h2>Изображение</h2>
+  <div class="canvases">
+    <div><p class="canvas-title">Источник</p><canvas id="source" width="512" height="512"></canvas></div>
+    <div><p class="canvas-title">Результат обработки</p><canvas id="output" width="512" height="512"></canvas></div>
+    <div><p class="canvas-title">Разница CPU/GPU (усилена для видимости)</p><canvas id="difference" width="512" height="512"></canvas></div>
+  </div>
+  <p class="muted" id="imageInfo">Встроенное тестовое изображение: 512 × 512</p>
+  <p class="muted" id="differenceInfo">Сначала запустите CPU и GPU или полный benchmark.</p>
+</section>
+
+<section class="panel">
+  <h2>Результаты benchmark</h2>
+  <div id="results"><p class="muted">Нажмите «Сравнить CPU и GPU», чтобы выполнить измерения на нескольких размерах данных.</p></div>
+  <p class="hint">Время GPU включает отправку команд, ожидание и копирование результата обратно в память CPU (readback). Это end-to-end измерение, а не только время работы шейдера. Время CPU — медиана повторных запусков после прогрева.</p>
+  <p id="accuracy" class="muted"></p>
+  <h3>График времени выполнения</h3>
+  <div class="chart-wrap"><canvas id="benchmarkChart" width="900" height="260" aria-label="График времени CPU и GPU" role="img"></canvas></div>
+  <p class="hint">На графике показаны медианные значения из таблицы. Высота столбца соответствует времени в миллисекундах.</p>
+</section>
+
+<section class="panel">
+  <h2>Как устроено вычисление</h2>
+  <div class="grid2">
+    <div><h3>CPU — JavaScript</h3><p>Циклы последовательно обходят пиксели и соседние точки. Для каждого пикселя рассчитывается среднее значение окрестности (Box Blur) или градиент яркости (Sobel).</p></div>
+    <div><h3>GPU — WGSL</h3><p>Compute shader запускает множество потоков. Один invocation обрабатывает один пиксель. Workgroup имеет размер <code>8 × 8</code>, а <code>dispatchWorkgroups</code> распределяет блоки по изображению.</p></div>
+  </div>
+  <p>Данные передаются в GPU storage buffer, параметры — в uniform buffer. После вычисления результат копируется в readback buffer и отображается на Canvas. Для маленьких массивов накладные расходы на передачу данных и запуск GPU могут быть больше выигрыша от параллелизма.</p>
+</section>
+<script type="module" src="./app.js"></script>
 </body>
 </html>
