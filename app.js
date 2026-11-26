@@ -340,9 +340,11 @@ async function runBenchmark() {
     $("#accuracy").textContent = `Проверка корректности (CPU vs GPU, размер ${worst.size}²): максимальная разница ${worst.accuracy.max.toFixed(3)}, средняя абсолютная разница ${worst.accuracy.mean.toFixed(4)} уровня яркости. Небольшие расхождения возможны из-за порядка операций с плавающей точкой.`;
     renderResult(cpuFilter(sourcePixels, sourceWidth, sourceHeight, algorithm, radius), sourceWidth, sourceHeight);
     setStatus("Benchmark завершён. Повторите тест несколько раз для оценки стабильности.");
+    return true;
   } catch (error) {
     setStatus("Ошибка benchmark: " + error.message, true);
     $("#results").textContent = "Не удалось завершить измерения.";
+    return false;
   } finally {
     $("#benchmark").disabled = false;
     $("#cpu").disabled = false; $("#gpu").disabled = false;
@@ -404,7 +406,8 @@ async function runDemo() {
     setStatus("Демонстрация 2/3: выполняется GPU…");
     await runSingle("gpu");
     setStatus("Демонстрация 3/3: запускается benchmark…");
-    await runBenchmark();
+    const benchmarkSucceeded = await runBenchmark();
+    if (!benchmarkSucceeded) return;
     setStatus("Демонстрация завершена: результаты, график и разница CPU/GPU готовы.");
   } catch (error) {
     setStatus("Ошибка демонстрации: " + error.message, true);
