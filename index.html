@@ -17,7 +17,8 @@
     button{background:#8bb4ff;color:#08172d;border:0;font-weight:750;cursor:pointer}
     button.secondary{background:#2a3c5d;color:#edf4ff}button:disabled{opacity:.5;cursor:wait}
     input[type=range]{accent-color:#8bb4ff}
-    .canvases{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .canvases{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .chart-wrap{width:100%;overflow:hidden}.chart-wrap canvas{height:260px}
     canvas{display:block;width:100%;height:auto;background:#080e19;border:1px solid #2a3a55;border-radius:10px;image-rendering:auto}
     .canvas-title{font-size:13px;color:#aebfda;margin:0 0 8px}
     #status{padding:10px 12px;background:#0e192a;border-radius:9px;color:#9fe3c1;margin:14px 0 0}
@@ -26,6 +27,7 @@
     th{color:#aebfda;font-weight:650}.good{color:#9fe3c1}.warn{color:#ffd18b}
     .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     code{color:#b8d0ff;background:#0c1728;padding:2px 5px;border-radius:4px}
+    @media(max-width:980px){.canvases{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:720px){.canvases,.grid2{grid-template-columns:1fr}body{padding:16px 12px 40px}}
   </style>
 </head>
@@ -44,6 +46,8 @@
     <button id="cpu">Обработать на CPU</button>
     <button id="gpu">Обработать на GPU</button>
     <button id="benchmark" class="secondary">Сравнить CPU и GPU</button>
+    <button id="demo" class="secondary">Режим демонстрации</button>
+    <button id="reset" class="secondary">Сбросить</button>
   </div>
   <p id="status" role="status">Подготовка WebGPU…</p>
   <p class="hint">Можно загрузить своё изображение или использовать встроенную тестовую картинку. Для WebGPU откройте сайт через localhost или HTTPS.</p>
@@ -54,6 +58,7 @@
   <div class="canvases">
     <div><p class="canvas-title">Источник</p><canvas id="source" width="512" height="512"></canvas></div>
     <div><p class="canvas-title">Результат обработки</p><canvas id="output" width="512" height="512"></canvas></div>
+    <div><p class="canvas-title">Разница CPU/GPU (усилена для видимости)</p><canvas id="difference" width="512" height="512"></canvas></div>
   </div>
   <p class="muted" id="imageInfo">Встроенное тестовое изображение: 512 × 512</p>
 </section>
@@ -63,6 +68,9 @@
   <div id="results"><p class="muted">Нажмите «Сравнить CPU и GPU», чтобы выполнить измерения на нескольких размерах данных.</p></div>
   <p class="hint">Время GPU включает отправку команд, ожидание и копирование результата обратно в память CPU (readback). Это end-to-end измерение, а не только время работы шейдера. Время CPU — медиана повторных запусков после прогрева.</p>
   <p id="accuracy" class="muted"></p>
+  <h3>График времени выполнения</h3>
+  <div class="chart-wrap"><canvas id="benchmarkChart" width="900" height="260" aria-label="График времени CPU и GPU" role="img"></canvas></div>
+  <p class="hint">На графике показаны медианные значения из таблицы. Высота столбца соответствует времени в миллисекундах.</p>
 </section>
 
 <section class="panel">
